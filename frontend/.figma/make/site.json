@@ -1,0 +1,10 @@
+{
+  "description": "Connect with others in a peer-to-peer marketplace to buy, sell, or swap items, enabling seamless negotiations and cash-on-delivery transactions.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
