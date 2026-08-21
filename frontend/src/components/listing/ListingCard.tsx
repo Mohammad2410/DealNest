@@ -29,9 +29,11 @@ interface Props {
 export default function ListingCard({ listing }: Props) {
   const { currentUser } = useAuthStore();
   const { isFavorited, toggleFavorite } = useFavoriteStore();
-  const favorited = isFavorited(listing.id);
-  const primaryImage = listing.images.find(i => i.isPrimary) || listing.images[0];
-  const isOwner = currentUser?.id === listing.sellerId;
+  const favorited = isFavorited(listing?.id || '');
+  const primaryImage = (listing?.images && Array.isArray(listing.images) && listing.images.length > 0)
+    ? (listing.images.find(i => i?.isPrimary) || listing.images[0])
+    : null;
+  const isOwner = currentUser?.id === listing?.sellerId;
 
   function handleFavorite(e: React.MouseEvent) {
     e.preventDefault();

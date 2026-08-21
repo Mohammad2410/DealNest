@@ -262,48 +262,68 @@ export default function ListingDetailPage() {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [offerMode, setOfferMode] = useState<'offer' | 'counter'>('offer');
   const [acceptLoading, setAcceptLoading] = useState<string | null>(null);
-  const [toast, setToast] = useState('');
+  const isOwner = currentUser?.id === listing?.sellerId;
+  const { openLoginModal } = useAuthStore();
+  const favorited = listing ? isFavorited(listing.id) : false;
 
   useEffect(() => {
     if (!id) return;
-    if (currentUser) loadFavorites(currentUser.id);
+    let isMounted = true;
 
-    Promise.all([
-      listingService.getById(id),
-      offerService.getByListing(id),
-    ]).then(async ([l, offers]) => {
-      if (!l) { setLoading(false); return; }
-      setListing(l);
-      const [s, cat, related] = await Promise.all([
-        userService.getById(l.sellerId),
-        categoryService.getById(l.categoryId),
-        listingService.getRelated(l.id, l.categoryId),
-      ]);
-      setSeller(s);
-      setCategory(cat);
-      setRelatedListings(related);
+    async function loadData() {
+      setLoading(true);
+      try {
+        if (currentUser) loadFavorites(currentUser.id);
 
-      if (currentUser) {
-        const mine = offers.find(o => o.buyerId === currentUser.id);
-        setMyOffer(mine || null);
-        if (l.sellerId === currentUser.id) {
-          setReceivedOffers(offers.filter(o => o.status === 'pending' || o.status === 'countered'));
+        const l = await listingService.getById(id);
+        if (!l || !isMounted) {
+          if (isMounted) setLoading(false);
+          return;
         }
-        const ul = await listingService.getAll({ sellerId: currentUser.id, status: 'active' });
-        setUserListings(ul.filter(ul => ul.id !== l.id));
+
+        setListing(l);
+
+        // Fetch auxiliary data in parallel safely
+        const [s, cat, related, offers] = await Promise.all([
+          userService.getById(l.sellerId).catch(() => null),
+          categoryService.getById(l.categoryId).catch(() => null),
+          listingService.getRelated(l.id, l.categoryId).catch(() => []),
+          offerService.getByListing(id).catch(() => []),
+        ]);
+
+        if (!isMounted) return;
+
+        setSeller(s);
+        setCategory(cat);
+        setRelatedListings(related || []);
+
+        if (currentUser && offers) {
+          const mine = offers.find(o => o.buyerId === currentUser.id);
+          setMyOffer(mine || null);
+          if (l.sellerId === currentUser.id) {
+            setReceivedOffers(offers.filter(o => o.status === 'pending' || o.status === 'countered'));
+          }
+          const ul = await listingService.getAll({ sellerId: currentUser.id, status: 'active' }).catch(() => []);
+          if (isMounted) setUserListings(ul.filter(u => u.id !== l.id));
+        }
+      } catch (err) {
+        console.error('Failed to load listing detail:', err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      setLoading(false);
-    });
-  }, [id]);
+    }
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, currentUser?.id]);
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   }
-
-  const isOwner = currentUser?.id === listing?.sellerId;
-  const { openLoginModal } = useAuthStore();
-  const favorited = listing ? isFavorited(listing.id) : false;
 
   async function handleMakeOffer(amount: number, message: string) {
     if (!listing || !currentUser) return;
@@ -604,34 +624,69 @@ export default function ListingDetailPage() {
           {/* Actions */}
           {!isOwner && !isSold && (
             <div className="bg-white rounded-2xl border border-[var(--border)] p-5 space-y-3">
-              {canBuy && !myOffer && (
-                <Link
-                  to={`/checkout?listingId=${listing.id}&price=${listing.price}`}
-                  className="block w-full py-3.5 bg-[var(--foreground)] text-white rounded-xl font-semibold hover:opacity-90 transition-opacity text-center"
-                >
-                  Buy at {formatPrice(listing.price)}
-                </Link>
+              {!myOffer && (
+                currentUser ? (
+                  <Link
+                    to={`/checkout?listingId=${listing.id}&price=${listing.price}`}
+                    className="block w-full py-3.5 bg-[var(--foreground)] text-white rounded-xl font-semibold hover:opacity-90 transition-opacity text-center shadow-sm"
+                  >
+                    Buy at {formatPrice(listing.price)}
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => openLoginModal(`/checkout?listingId=${listing.id}&price=${listing.price}`)}
+                    className="w-full py-3.5 bg-[var(--foreground)] text-white rounded-xl font-semibold hover:opacity-90 transition-opacity text-center shadow-sm"
+                  >
+                    Buy at {formatPrice(listing.price)}
+                  </button>
+                )
               )}
-              {canOffer && !myOffer && (
+
+              {listing.negotiable && !myOffer && (
                 <button
-                  onClick={() => { setOfferMode('offer'); setShowOfferModal(true); }}
-                  className="w-full py-3.5 bg-[var(--primary)] text-white rounded-xl font-semibold hover:opacity-90 transition-opacity"
+                  onClick={() => {
+                    if (!currentUser) {
+                      openLoginModal(`/listing/${listing.id}`);
+                      return;
+                    }
+                    setOfferMode('offer');
+                    setShowOfferModal(true);
+                  }}
+                  className="w-full py-3.5 bg-[var(--primary)] text-white rounded-xl font-semibold hover:opacity-90 transition-opacity shadow-sm"
                 >
                   Make an Offer
                 </button>
               )}
+
               {!listing.negotiable && (
-                <p className="text-xs text-center text-[var(--muted-foreground)]">This listing does not accept offers.</p>
+                <p className="text-xs text-center text-[var(--muted-foreground)]">Fixed price · No offers accepted</p>
               )}
-              {listing.swapAvailable && currentUser && (
+
+              {listing.swapAvailable && (
                 <button
-                  onClick={() => setShowSwapModal(true)}
+                  onClick={() => {
+                    if (!currentUser) {
+                      openLoginModal(`/listing/${listing.id}`);
+                      return;
+                    }
+                    setShowSwapModal(true);
+                  }}
                   className="w-full py-3 border border-[var(--primary)] text-[var(--primary)] rounded-xl font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <RefreshCw size={16} /> Propose a Swap
                 </button>
               )}
-              <button onClick={handleMessage} className="w-full py-3 border border-[var(--border)] rounded-xl font-semibold hover:bg-[var(--muted)] transition-colors flex items-center justify-center gap-2 text-sm">
+
+              <button
+                onClick={() => {
+                  if (!currentUser) {
+                    openLoginModal(`/listing/${listing.id}`);
+                    return;
+                  }
+                  handleMessage();
+                }}
+                className="w-full py-3 border border-[var(--border)] rounded-xl font-semibold hover:bg-[var(--muted)] transition-colors flex items-center justify-center gap-2 text-sm"
+              >
                 <MessageSquare size={16} /> Message Seller
               </button>
             </div>

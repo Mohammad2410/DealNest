@@ -73,11 +73,14 @@ export default function CheckoutPage() {
       return;
     }
     Promise.all([
-      offerId ? offerService.getById(offerId) : Promise.resolve(null),
-      listingId ? listingService.getById(listingId) : Promise.resolve(null),
+      offerId ? offerService.getById(offerId).catch(() => null) : Promise.resolve(null),
+      listingId ? listingService.getById(listingId).catch(() => null) : Promise.resolve(null),
     ]).then(([o, l]) => {
       setOffer(o);
       setListing(l);
+    }).catch(err => {
+      console.error('Checkout load error:', err);
+    }).finally(() => {
       setLoading(false);
     });
   }, [offerId, listingId, currentUser]);
