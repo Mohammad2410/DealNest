@@ -27,10 +27,10 @@ export default function LoginModal() {
     if (!email || !password) { setError('Please fill in all fields.'); return; }
     setError('');
     setLoading(true);
-    const ok = await loginWithCredentials(email, password);
+    const result = await loginWithCredentials(email, password);
     setLoading(false);
-    if (!ok) {
-      setError('Invalid email or password. Please try again.');
+    if (!result.ok) {
+      setError(result.error || 'Invalid email or password. Please try again.');
     } else {
       afterAuth();
     }
