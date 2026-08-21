@@ -15,6 +15,13 @@ interface AuthState {
   loadCurrentUser: () => Promise<void>;
 }
 
+function timeoutPromise<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 function fallbackUserFromAuth(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }): User {
   const name = (authUser.user_metadata?.name as string) || authUser.email?.split('@')[0] || 'User';
   return {
@@ -46,30 +53,33 @@ function profileToUser(profile: Record<string, unknown>, email: string, fallback
   };
 }
 
-async function ensureProfile(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }): Promise<User> {
+async function fetchProfileBackground(authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> }) {
   try {
-    const { data: profile } = await supabase
+    const fetchPromise = supabase
       .from('profiles')
       .select('*')
       .eq('id', authUser.id)
       .maybeSingle();
 
+    const { data: profile } = await timeoutPromise(fetchPromise, 2500, { data: null, error: null });
+
     if (profile) {
-      return profileToUser(profile as Record<string, unknown>, authUser.email || '', authUser.user_metadata?.name as string);
+      const fullUser = profileToUser(profile as Record<string, unknown>, authUser.email || '', authUser.user_metadata?.name as string);
+      useAuthStore.setState({ currentUser: fullUser, isAuthenticated: true });
+      return;
     }
 
-    // Try to insert profile if missing
+    // Try background upsert if profile row wasn't present
     const newProfile = {
       id: authUser.id,
       name: (authUser.user_metadata?.name as string) || authUser.email?.split('@')[0] || 'User',
       avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser.id}`,
       location: 'Dhaka',
     };
-    await supabase.from('profiles').upsert(newProfile);
+    supabase.from('profiles').upsert(newProfile).then(() => {});
   } catch (err) {
-    console.warn('Could not fetch or insert profile, using fallback auth data:', err);
+    console.warn('Background profile sync notice:', err);
   }
-  return fallbackUserFromAuth(authUser);
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -91,8 +101,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ currentUser: null, isAuthenticated: false });
         return;
       }
-      const user = await ensureProfile(session.user);
-      set({ currentUser: user, isAuthenticated: true });
+      // Instant display with auth user
+      const instantUser = fallbackUserFromAuth(session.user);
+      set({ currentUser: instantUser, isAuthenticated: true });
+
+      // Background profile sync
+      fetchProfileBackground(session.user);
     } catch (err) {
       console.error('Error loading current user:', err);
       set({ currentUser: null, isAuthenticated: false });
@@ -101,20 +115,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   loginWithCredentials: async (email, password) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const loginCall = supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      // 10 second timeout guard
+      const response = await Promise.race([
+        loginCall,
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Connection timed out. Please check your internet connection.')), 10000)),
+      ]);
+
+      const { data, error } = response;
       if (error) {
         return { ok: false, error: error.message };
       }
-      if (!data.user) {
+      if (!data?.user) {
         return { ok: false, error: 'No user returned from login.' };
       }
 
-      const user = await ensureProfile(data.user);
+      // Instant login transition
+      const instantUser = fallbackUserFromAuth(data.user);
       set({
-        currentUser: user,
+        currentUser: instantUser,
         isAuthenticated: true,
         loginModalOpen: false,
       });
+
+      // Sync full profile in background
+      fetchProfileBackground(data.user);
+
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: err.message || 'An unexpected error occurred during login.' };
@@ -123,7 +153,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   register: async (name, email, password) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const registerCall = supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
@@ -131,28 +161,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
       });
 
+      const response = await Promise.race([
+        registerCall,
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Connection timed out. Please try again.')), 10000)),
+      ]);
+
+      const { data, error } = response;
       if (error) {
         return { ok: false, error: error.message };
       }
 
-      if (!data.user) {
-        return { ok: false, error: 'Registration failed. Please check your details and try again.' };
+      if (!data?.user) {
+        return { ok: false, error: 'Registration failed. Please try again.' };
       }
 
-      // Check if session was created (if email confirmation is on, session will be null)
+      // If email confirmation is required by Supabase project settings
       if (!data.session) {
         return {
           ok: false,
-          error: 'Registration succeeded! Please check your email inbox to confirm your account, or disable "Confirm Email" in your Supabase dashboard.',
+          error: 'Account created! Please check your email to confirm, or turn off "Confirm email" in Supabase settings for instant login.',
         };
       }
 
-      const user = await ensureProfile(data.user);
+      // Instant state update
+      const instantUser = fallbackUserFromAuth(data.user);
       set({
-        currentUser: user,
+        currentUser: instantUser,
         isAuthenticated: true,
         loginModalOpen: false,
       });
+
+      fetchProfileBackground(data.user);
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: err.message || 'Registration failed.' };
@@ -168,14 +207,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 }));
 
-// Listen to auth state changes
+// Listen to auth state changes smoothly
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_OUT' || !session) {
     useAuthStore.setState({ currentUser: null, isAuthenticated: false });
     return;
   }
   if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-    const user = await ensureProfile(session.user);
-    useAuthStore.setState({ currentUser: user, isAuthenticated: true });
+    const instantUser = fallbackUserFromAuth(session.user);
+    useAuthStore.setState({ currentUser: instantUser, isAuthenticated: true });
+    fetchProfileBackground(session.user);
   }
 });

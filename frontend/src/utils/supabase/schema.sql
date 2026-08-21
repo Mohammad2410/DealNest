@@ -167,7 +167,7 @@ create policy "Offer parties can insert history" on public.offer_history for ins
   with check (from_user_id = auth.uid());
 
 -- ============================================================
--- CONVERSATIONS
+-- CONVERSATIONS & PARTICIPANTS
 -- ============================================================
 create table if not exists public.conversations (
   id uuid primary key default uuid_generate_v4(),
@@ -183,24 +183,42 @@ create table if not exists public.conversation_participants (
   primary key (conversation_id, user_id)
 );
 
+-- Security definer helper to avoid infinite RLS recursion
+create or replace function public.is_conversation_participant(c_id uuid, u_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.conversation_participants
+    where conversation_id = c_id and user_id = u_id
+  );
+$$;
+
 alter table public.conversations enable row level security;
 alter table public.conversation_participants enable row level security;
 
+-- Drop old recursive policies if they exist
+drop policy if exists "Participants can view conversations" on public.conversations;
+drop policy if exists "Authenticated users can create conversations" on public.conversations;
+drop policy if exists "Participants can view" on public.conversation_participants;
+drop policy if exists "Can insert participants" on public.conversation_participants;
+drop policy if exists "Can update own unread" on public.conversation_participants;
+
 create policy "Participants can view conversations" on public.conversations for select
-  using (exists (
-    select 1 from public.conversation_participants cp
-    where cp.conversation_id = id and cp.user_id = auth.uid()
-  ));
+  using (public.is_conversation_participant(id, auth.uid()));
+
 create policy "Authenticated users can create conversations" on public.conversations for insert
   with check (auth.uid() is not null);
 
-create policy "Participants can view" on public.conversation_participants for select
-  using (user_id = auth.uid() or exists (
-    select 1 from public.conversation_participants cp2
-    where cp2.conversation_id = conversation_id and cp2.user_id = auth.uid()
-  ));
+create policy "Participants can view participant rows" on public.conversation_participants for select
+  using (public.is_conversation_participant(conversation_id, auth.uid()));
+
 create policy "Can insert participants" on public.conversation_participants for insert
   with check (auth.uid() is not null);
+
 create policy "Can update own unread" on public.conversation_participants for update
   using (user_id = auth.uid());
 
@@ -218,18 +236,17 @@ create table if not exists public.messages (
 );
 
 alter table public.messages enable row level security;
+
+drop policy if exists "Participants can read messages" on public.messages;
+drop policy if exists "Participants can send messages" on public.messages;
+
 create policy "Participants can read messages" on public.messages for select
-  using (exists (
-    select 1 from public.conversation_participants cp
-    where cp.conversation_id = messages.conversation_id and cp.user_id = auth.uid()
-  ));
+  using (public.is_conversation_participant(conversation_id, auth.uid()));
+
 create policy "Participants can send messages" on public.messages for insert
   with check (
     sender_id = auth.uid() and
-    exists (
-      select 1 from public.conversation_participants cp
-      where cp.conversation_id = conversation_id and cp.user_id = auth.uid()
-    )
+    public.is_conversation_participant(conversation_id, auth.uid())
   );
 
 -- ============================================================
