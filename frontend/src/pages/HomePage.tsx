@@ -173,9 +173,9 @@ export default function HomePage() {
       </section>
 
       {/* How it works */}
-      <section className="bg-white border-t border-[var(--border)] py-16">
+      <section className="py-16 bg-white border-y border-[var(--border)]">
         <div className="max-w-7xl mx-auto px-4">
-          <h2 className="font-display text-3xl font-semibold text-center mb-12">How SwapBD Works</h2>
+          <h2 className="font-display text-3xl font-semibold text-center mb-12">How DealNest Works</h2>
           <div className="grid md:grid-cols-3 gap-8">
             {[
               { icon: ShoppingBag, title: 'List Your Item', desc: 'Upload photos, set a price, and describe your item in minutes. Choose to sell, accept offers, or swap.' },

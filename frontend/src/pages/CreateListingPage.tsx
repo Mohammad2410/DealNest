@@ -137,7 +137,7 @@ export default function CreateListingPage() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="font-display text-3xl font-bold mb-2">Sell Something</h1>
-        <p className="text-[var(--muted-foreground)] text-sm">Fill in the details to list your item on SwapBD.</p>
+        <p className="text-[var(--muted-foreground)] text-sm">Fill in the details to list your item on DealNest.</p>
       </div>
 
       {/* Step indicator */}

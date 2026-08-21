@@ -47,5 +47,5 @@ export const TRANSACTION_TIMELINE_LABELS: Record<string, string> = {
   'completed': 'Completed',
 };
 
-export const APP_NAME = 'SwapBD';
+export const APP_NAME = 'DealNest';
 export const APP_TAGLINE = 'Buy. Sell. Swap.';

@@ -70,7 +70,7 @@ export default function LoginModal() {
             <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center">
               <RefreshCw size={15} className="text-white" />
             </div>
-            <span className="font-display font-bold text-lg">SwapBD</span>
+            <span className="font-display font-bold text-lg">DealNest</span>
           </div>
           <h2 className="font-display text-2xl font-bold mb-1">
             {tab === 'login' ? 'Welcome back' : 'Create an account'}

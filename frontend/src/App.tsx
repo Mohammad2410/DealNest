@@ -65,7 +65,7 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-[var(--muted-foreground)]">
               <div className="flex items-center gap-2">
-                <span className="font-display font-bold text-[var(--foreground)]">SwapBD</span>
+                <span className="font-display font-bold text-[var(--foreground)]">DealNest</span>
                 <span>·</span>
                 <span>Bangladesh's peer-to-peer marketplace</span>
               </div>
@@ -74,7 +74,7 @@ export default function App() {
                 <span>·</span>
                 <span>Cash on Delivery only</span>
               </div>
-              <p>© 2026 SwapBD. All rights reserved.</p>
+              <p>© 2026 DealNest. All rights reserved.</p>
             </div>
           </div>
         </footer>

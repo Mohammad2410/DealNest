@@ -136,6 +136,6 @@ app.get('/api/notifications/:userId', async (req, res) => {
 // ── Start ─────────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`✅ SwapBD backend running on http://localhost:${PORT}`);
+  console.log(`✅ DealNest backend running on http://localhost:${PORT}`);
   console.log(`   Supabase: ${supabaseUrl}`);
 });
