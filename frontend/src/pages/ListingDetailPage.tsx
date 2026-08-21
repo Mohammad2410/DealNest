@@ -262,6 +262,7 @@ export default function ListingDetailPage() {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [offerMode, setOfferMode] = useState<'offer' | 'counter'>('offer');
   const [acceptLoading, setAcceptLoading] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
   const isOwner = currentUser?.id === listing?.sellerId;
   const { openLoginModal } = useAuthStore();
   const favorited = listing ? isFavorited(listing.id) : false;
